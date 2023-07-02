@@ -1178,11 +1178,16 @@ updateRedirectNginxConf() {
 EOF
 
     if echo "${selectCustomInstallType}" | grep -q 2 && echo "${selectCustomInstallType}" | grep -q 5 || [[ -z "${selectCustomInstallType}" ]]; then
+        local nginxH2Conf=
+        nginxH2Conf="listen 127.0.0.1:31302 http2 so_keepalive=on;"
+        nginxVersion=$(nginx -v 2>&1)
 
+        if echo "${nginxVersion}" | grep -q "1.25"; then
+            nginxH2Conf="listen 127.0.0.1:31302 so_keepalive=on;http2 on;"
+        fi
         cat <<EOF >>${nginxConfigPath}alone.conf
 server {
-	listen 127.0.0.1:31302 so_keepalive=on;
-	http2 on;
+	${nginxH2Conf}
 	server_name ${domain};
 	root ${nginxStaticPath};
 
@@ -1916,6 +1921,7 @@ installTuic() {
         read -r -p "是否更新、升级？[y/n]:" reInstallTuicStatus
         if [[ "${reInstallTuicStatus}" == "y" ]]; then
             rm -f /etc/v2ray-agent/tuic/tuic
+            tuicConfigPath=
             installTuic "$1"
         fi
     fi
@@ -3978,6 +3984,20 @@ EOF
         cat <<EOF >>"/etc/v2ray-agent/subscribe_local/default/${user}"
 vless://${id}@${add}:${currentDefaultPort}?encryption=none&security=tls&type=grpc&host=${currentHost}&path=${currentPath}grpc&serviceName=${currentPath}grpc&fp=chrome&alpn=h2&sni=${currentHost}#${email}
 EOF
+        cat <<EOF >>"/etc/v2ray-agent/subscribe_local/clashMeta/${user}"
+  - name: "${email}"
+    type: vless
+    server: ${add}
+    port: ${currentDefaultPort}
+    uuid: ${id}
+    udp: true
+    tls: true
+    network: grpc
+    client-fingerprint: chrome
+    servername: ${currentHost}
+    grpc-opts:
+      grpc-service-name: ${currentPath}grpc
+EOF
         echoContent yellow " ---> 二维码 VLESS(VLESS+gRPC+TLS)"
         echoContent green "    https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=vless%3A%2F%2F${id}%40${add}%3A${currentDefaultPort}%3Fencryption%3Dnone%26security%3Dtls%26type%3Dgrpc%26host%3D${currentHost}%26serviceName%3D${currentPath}grpc%26fp%3Dchrome%26path%3D${currentPath}grpc%26sni%3D${currentHost}%26alpn%3Dh2%23${email}"
 
@@ -4021,7 +4041,7 @@ EOF
     sni: ${currentHost}
     udp: true
     grpc-opts:
-      grpc-service-name: "${currentPath}trojangrpc"
+      grpc-service-name: ${currentPath}trojangrpc
 EOF
         echoContent yellow " ---> 二维码 Trojan gRPC(TLS)"
         echoContent green "    https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=trojan%3a%2f%2f${id}%40${add}%3a${currentDefaultPort}%3Fencryption%3Dnone%26fp%3Dchrome%26security%3Dtls%26peer%3d${currentHost}%26type%3Dgrpc%26sni%3d${currentHost}%26path%3D${currentPath}trojangrpc%26alpn%3Dh2%26serviceName%3D${currentPath}trojangrpc%23${email}\n"
@@ -4031,10 +4051,12 @@ EOF
         hysteriaEmail=$(echo "${email}" | awk -F "[-]" '{print $1}')_hysteria
         echoContent yellow " ---> Hysteria(TLS)"
         local clashMetaPortTmp="port: ${hysteriaPort}"
+        local v2rayNPortHopping=
         local mport=
         if [[ -n "${portHoppingStart}" ]]; then
             mport="mport=${portHoppingStart}-${portHoppingEnd}&"
             clashMetaPortTmp="ports: ${portHoppingStart}-${portHoppingEnd}"
+            v2rayNPortHopping=",${portHoppingStart}-${portHoppingEnd}"
         fi
         echoContent green "    hysteria://${currentHost}:${hysteriaPort}?${mport}protocol=${hysteriaProtocol}&auth=${id}&peer=${currentHost}&insecure=0&alpn=h3&upmbps=${hysteriaClientUploadSpeed}&downmbps=${hysteriaClientDownloadSpeed}#${hysteriaEmail}\n"
         cat <<EOF >>"/etc/v2ray-agent/subscribe_local/default/${user}"
@@ -4043,28 +4065,30 @@ EOF
         echoContent yellow " ---> v2rayN(hysteria+TLS)"
         cat <<EOF >"/etc/v2ray-agent/hysteria/conf/client.json"
 {
-  server: "${currentHost}:34356",
-  protocol: "${hysteriaProtocol}",
-  up_mbps: "${hysteriaClientUploadSpeed}"
-  down_mbps: "${hysteriaClientDownloadSpeed}"
-  http: { listen: "127.0.0.1:10809", timeout: 300, disable_udp: false },
-  socks5: { listen: "127.0.0.1:10808", timeout: 300, disable_udp: false },
-  alpn: "h3",
-  acl: "acl/routes.acl",
-  mmdb: "acl/Country.mmdb",
-  server_name: "${currentHost}",
-  insecure: false,
-  recv_window_conn: 5767168,
-  recv_window: 23068672,
-  disable_mtu_discovery: true,
-  resolver: "https://223.5.5.5/dns-query",
-  retry: 3,
-  retry_interval: 3,
-  quit_on_disconnect: false,
-  handshake_timeout: 15,
-  idle_timeout: 30,
-  fast_open: true,
-  hop_interval: 120
+  "server": "${currentHost}:${hysteriaPort}${v2rayNPortHopping}",
+  "protocol": "${hysteriaProtocol}",
+  "up_mbps": ${hysteriaClientUploadSpeed},
+  "down_mbps": ${hysteriaClientDownloadSpeed},
+  "http": { "listen": "127.0.0.1:10809", "timeout": 300, "disable_udp": false },
+  "socks5": { "listen": "127.0.0.1:10808", "timeout": 300, "disable_udp": false },
+  "obfs": "",
+  "auth_str":"${id}",
+  "alpn": "h3",
+  "acl": "acl/routes.acl",
+  "mmdb": "acl/Country.mmdb",
+  "server_name": "${currentHost}",
+  "insecure": false,
+  "recv_window_conn": 5767168,
+  "recv_window": 23068672,
+  "disable_mtu_discovery": true,
+  "resolver": "https://223.5.5.5/dns-query",
+  "retry": 3,
+  "retry_interval": 3,
+  "quit_on_disconnect": false,
+  "handshake_timeout": 15,
+  "idle_timeout": 30,
+  "fast_open": true,
+  "hop_interval": 120
 }
 EOF
         local v2rayNConf=
@@ -4391,7 +4415,7 @@ showAccounts() {
         echoContent skyBlue "\n================================  Tuic TLS  ================================\n"
         echoContent yellow "\n --->Tuic相对于Hysteria会更加温 使用体验可能会更流畅。"
 
-        jq -r .users[] ${tuicConfigPath}config.json | while read -r id; do
+        jq -r .users[] "${tuicConfigPath}config.json" | while read -r id; do
             local tuicEmail=
             tuicEmail=$(jq -r '.inbounds[0].settings.clients[]|select(.id=="'"${id}"'")|.email' ${configPath}${frontingType}.json | awk -F "[-]" '{print $1}')
 
@@ -4935,8 +4959,8 @@ addUserXray() {
         if echo ${currentInstallProtocolType} | grep -q 9; then
             local tuicResult
 
-            tuicResult=$(jq -r ".users.\"${uuid}\" += \"${uuid}\"" ${tuicConfigPath}config.json)
-            echo "${tuicResult}" | jq . >${tuicConfigPath}config.json
+            tuicResult=$(jq -r ".users.\"${uuid}\" += \"${uuid}\"" "${tuicConfigPath}config.json")
+            echo "${tuicResult}" | jq . >"${tuicConfigPath}config.json"
         fi
     done
 
@@ -5140,8 +5164,8 @@ removeUser() {
 
         if echo ${currentInstallProtocolType} | grep -q 9; then
             local tuicResult
-            tuicResult=$(jq -r "del(.users.\"${uuid}\")" ${tuicConfigPath}config.json)
-            echo "${tuicResult}" | jq . >${tuicConfigPath}config.json
+            tuicResult=$(jq -r "del(.users.\"${uuid}\")" "${tuicConfigPath}config.json")
+            echo "${tuicResult}" | jq . >"${tuicConfigPath}config.json"
         fi
         reloadCore
     fi
@@ -6999,20 +7023,20 @@ dns:
   enhanced-mode: fake-ip
   fake-ip-range: 28.0.0.1/8
   fake-ip-filter:
-  - '*'
-  - '+.lan'
+    - '*'
+    - '+.lan'
   default-nameserver:
-  - 223.5.5.5
+    - 223.5.5.5
   nameserver:
-  - 'tls://8.8.4.4#DNS_Proxy'
-  - 'tls://1.0.0.1#DNS_Proxy'
+    - 'tls://8.8.4.4#DNS_Proxy'
+    - 'tls://1.0.0.1#DNS_Proxy'
   proxy-server-nameserver:
-  - https://dns.alidns.com/dns-query#h3=true
+    - https://dns.alidns.com/dns-query#h3=true
   nameserver-policy:
     "geosite:cn,private":
-    - 223.5.5.5
-    - 114.114.114.114
-    - https://dns.alidns.com/dns-query#h3=true
+      - 223.5.5.5
+      - 114.114.114.114
+      - https://dns.alidns.com/dns-query#h3=true
 
 proxy-providers:
   provider1:
@@ -7337,7 +7361,7 @@ rules:
   - RULE-SET,ChinaMaxDomain,本地直连
   - RULE-SET,ChinaMaxIPNoIPv6,本地直连,no-resolve
   - RULE-SET,lan,本地直连,no-resolve
-  - GEOIP,CN,本地直连,no-resolve
+  - GEOIP,CN,本地直连
   - MATCH,漏网之鱼
 EOF
 
@@ -7784,7 +7808,7 @@ menu() {
     cd "$HOME" || exit
     echoContent red "\n=============================================================="
     echoContent green "作者：mack-a"
-    echoContent green "当前版本：v2.9.21"
+    echoContent green "当前版本：v2.9.25"
     echoContent green "Github：https://github.com/mack-a/v2ray-agent"
     echoContent green "描述：八合一共存脚本\c"
     showInstallStatus
@@ -7793,7 +7817,7 @@ menu() {
     echoContent red "                                              "
     echoContent green "推广请联系TG：@mackaff\n"
     echoContent green "VPS选购攻略：https://www.v2ray-agent.com/archives/1679975663984"
-    echoContent green "freevod免费的观影网站：https://www.v2ray-agent.com/archives/1682647927103"
+    echoContent green "RN低价套餐，年付最低10美元：https://www.v2ray-agent.com/archives/racknerdtao-can-zheng-li-nian-fu-10mei-yuan"
     echoContent red "=============================================================="
     if [[ -n "${coreInstallType}" ]]; then
         echoContent yellow "1.重新安装"
