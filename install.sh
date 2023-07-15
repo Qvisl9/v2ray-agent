@@ -1843,7 +1843,7 @@ installV2Ray() {
     if [[ "${coreInstallType}" != "2" && "${coreInstallType}" != "3" ]]; then
         if [[ "${selectCoreType}" == "2" ]]; then
 
-            version=$(curl -s https://api.github.com/repos/v2fly/v2ray-core/releases | jq -r '.[]|select (.prerelease==false)|.tag_name' | grep -v 'v5' | head -1)
+            version=$(curl -s https://api.github.com/repos/v2fly/v2ray-core/releases?per_page=10 | jq -r '.[]|select (.prerelease==false)|.tag_name' | grep -v 'v5' | head -1)
         else
             version=${v2rayCoreVersion}
         fi
@@ -1882,7 +1882,7 @@ installHysteria() {
 
     if [[ -z "${hysteriaConfigPath}" ]]; then
 
-        version=$(curl -s https://api.github.com/repos/apernet/hysteria/releases | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -1)
+        version=$(curl -s https://api.github.com/repos/apernet/hysteria/releases?per_page=5 | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -1)
 
         echoContent green " ---> Hysteria版本:${version}"
         #        if wget --help | grep -q show-progress; then
@@ -1910,7 +1910,7 @@ installTuic() {
 
     if [[ -z "${tuicConfigPath}" ]]; then
 
-        version=$(curl -s https://api.github.com/repos/EAimTY/tuic/releases | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -1)
+        version=$(curl -s https://api.github.com/repos/EAimTY/tuic/releases?per_page=5 | jq -r '.[]|select (.prerelease==false)|.tag_name' | head -1)
 
         echoContent green " ---> Tuic版本:${version}"
         wget -c -q "${wgetShowProgressStatus}" -P /etc/v2ray-agent/tuic/ "https://github.com/EAimTY/tuic/releases/download/${version}/${version}${tuicCoreCPUVendor}"
@@ -1945,7 +1945,7 @@ installXray() {
 
     if [[ "${coreInstallType}" != "1" ]]; then
 
-        version=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases | jq -r '.[]|select (.prerelease=='${prereleaseStatus}')|.tag_name' | head -1)
+        version=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases?per_page=10 | jq -r '.[]|select (.prerelease=='${prereleaseStatus}')|.tag_name' | head -1)
 
         echoContent green " ---> Xray-core版本:${version}"
 
@@ -1962,7 +1962,7 @@ installXray() {
         unzip -o "/etc/v2ray-agent/xray/${xrayCoreCPUVendor}.zip" -d /etc/v2ray-agent/xray >/dev/null
         rm -rf "/etc/v2ray-agent/xray/${xrayCoreCPUVendor}.zip"
 
-        version=$(curl -s https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases | jq -r '.[]|.tag_name' | head -1)
+        version=$(curl -s https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases?per_page=1 | jq -r '.[]|.tag_name')
         echoContent skyBlue "------------------------Version-------------------------------"
         echo "version:${version}"
         rm /etc/v2ray-agent/xray/geo* >/dev/null 2>&1
@@ -2088,7 +2088,7 @@ xrayVersionManageMenu() {
 updateGeoSite() {
     echoContent yellow "\n来源 https://github.com/Loyalsoldier/v2ray-rules-dat"
 
-    version=$(curl -s https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases | jq -r '.[]|.tag_name' | head -1)
+    version=$(curl -s https://api.github.com/repos/Loyalsoldier/v2ray-rules-dat/releases?per_page=1 | jq -r '.[]|.tag_name')
     echoContent skyBlue "------------------------Version-------------------------------"
     echo "version:${version}"
     rm ${configPath}../geo* >/dev/null
@@ -2960,7 +2960,7 @@ EOF
 # Tuic安装
 tuicCoreInstall() {
     if ! echo "${currentInstallProtocolType}" | grep -q "0" || [[ -z "${coreInstallType}" ]]; then
-        echoContent red "\n ---> 由于环境依赖，如安装Tuic，请先安装Xray-core的VLESS_TCP_TLS"
+        echoContent red "\n ---> 由于环境依赖，如安装Tuic，请先安装Xray-core的VLESS_TCP_TLS_Vision"
         exit 0
     fi
     totalProgress=5
@@ -4501,6 +4501,11 @@ addNginx302() {
 # 更新伪装站
 updateNginxBlog() {
     echoContent skyBlue "\n进度 $1/${totalProgress} : 更换伪装站点"
+
+    if ! echo "${currentInstallProtocolType}" | grep -q "0" || [[ -z "${coreInstallType}" ]]; then
+        echoContent red "\n ---> 由于环境依赖，请先安装Xray-core的VLESS_TCP_TLS_Vision"
+        exit 0
+    fi
     echoContent red "=============================================================="
     echoContent yellow "# 如需自定义，请手动复制模版文件到 ${nginxStaticPath} \n"
     echoContent yellow "1.新手引导"
@@ -4713,6 +4718,12 @@ unInstall() {
         handleHysteria stop
         rm -rf /etc/systemd/system/hysteria.service
         echoContent green " ---> 删除Hysteria开机自启完成"
+    fi
+
+    if [[ -z "${tuicConfigPath}" ]]; then
+        handleTuic stop
+        rm -rf /etc/systemd/system/tuic.service
+        echoContent green " ---> 删除Tuic开机自启完成"
     fi
 
     #    if [[ -f "/root/.acme.sh/acme.sh.env" ]] && grep -q 'acme.sh.env' </root/.bashrc; then
@@ -6790,7 +6801,7 @@ xrayCoreInstall() {
 # Hysteria安装
 hysteriaCoreInstall() {
     if ! echo "${currentInstallProtocolType}" | grep -q "0" || [[ -z "${coreInstallType}" ]]; then
-        echoContent red "\n ---> 由于环境依赖，如安装hysteria，请先安装Xray-core的VLESS_TCP_TLS"
+        echoContent red "\n ---> 由于环境依赖，如安装hysteria，请先安装Xray-core的VLESS_TCP_TLS_Vision"
         exit 0
     fi
     totalProgress=5
@@ -7039,9 +7050,9 @@ dns:
       - https://dns.alidns.com/dns-query#h3=true
 
 proxy-providers:
-  provider1:
+  ${subscribeSalt}_provider:
     type: http
-    path: ./provider1.yaml
+    path: ./${subscribeSalt}_provider.yaml
     url: ${url}
     interval: 3600
     health-check:
@@ -7053,7 +7064,7 @@ proxy-groups:
   - name: 节点选择
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 手动切换
       - 自动选择
@@ -7063,7 +7074,7 @@ proxy-groups:
   - name: 流媒体
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 手动切换
       - 自动选择
@@ -7073,7 +7084,7 @@ proxy-groups:
   - name: 手动切换
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies: null
   - name: 自动选择
     type: url-test
@@ -7081,7 +7092,7 @@ proxy-groups:
     interval: 36000
     tolerance: 50
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies: null
   - name: 故障转移
     type: fallback
@@ -7089,7 +7100,7 @@ proxy-groups:
     interval: 300
     tolerance: 50
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 自动选择
   - name: 负载均衡
@@ -7098,19 +7109,19 @@ proxy-groups:
     interval: 300
     tolerance: 50
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies: null
   - name: 全球代理
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 手动切换
       - 自动选择
   - name: DNS_Proxy
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 自动选择
       - 节点选择
@@ -7119,7 +7130,7 @@ proxy-groups:
   - name: Telegram
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 手动切换
       - 自动选择
@@ -7127,14 +7138,14 @@ proxy-groups:
   - name: YouTube
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 手动切换
       - 自动选择
   - name: Netflix
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 流媒体
       - 节点选择
@@ -7142,7 +7153,7 @@ proxy-groups:
   - name: HBO
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 流媒体
       - 节点选择
@@ -7150,21 +7161,21 @@ proxy-groups:
   - name: Bing
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 节点选择
       - 自动选择
   - name: OpenAI
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 节点选择
       - 自动选择
   - name: Disney
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 流媒体
       - 节点选择
@@ -7172,7 +7183,7 @@ proxy-groups:
   - name: GitHub
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 手动切换
       - 自动选择
@@ -7180,7 +7191,7 @@ proxy-groups:
   - name: Spotify
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 流媒体
       - 手动切换
@@ -7189,7 +7200,7 @@ proxy-groups:
   - name: Google
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - 手动切换
       - 自动选择
@@ -7197,13 +7208,13 @@ proxy-groups:
   - name: 国内媒体
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - DIRECT
   - name: 本地直连
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - DIRECT
       - 节点选择
@@ -7211,7 +7222,7 @@ proxy-groups:
   - name: 漏网之鱼
     type: select
     use:
-      - provider1
+      - ${subscribeSalt}_provider
     proxies:
       - DIRECT
       - 节点选择
@@ -7345,8 +7356,8 @@ rule-providers:
     url: https://ghproxy.com/https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/ChinaMax/ChinaMax_IP_No_IPv6.yaml
     path: ./Rules/ChinaMaxIPNoIPv6.yaml
 rules:
-  - RULE-SET,Google,Google,no-resolve
   - RULE-SET,YouTube,YouTube,no-resolve
+  - RULE-SET,Google,Google,no-resolve
   - RULE-SET,GitHub,GitHub
   - RULE-SET,telegramcidr,Telegram,no-resolve
   - RULE-SET,Spotify,Spotify,no-resolve
@@ -7535,7 +7546,7 @@ initRealityDest() {
         realityDestDomain=${domain}:${port}
     else
         local realityDestDomainList=
-        realityDestDomainList="gateway.icloud.com,itunes.apple.com,download-installer.cdn.mozilla.net,addons.mozilla.org,www.microsoft.com,www.lovelive-anime.jp,www.speedtest.net,www.speedtest.org,swdist.apple.com,swcdn.apple.com,updates.cdn-apple.com,mensura.cdn-apple.com,osxapps.itunes.apple.com,aod.itunes.apple.com,cdn-dynmedia-1.microsoft.com,update.microsoft,software.download.prss.microsoft.com,s0.awsstatic.com,d1.awsstatic.com,images-na.ssl-images-amazon.com,m.media-amazon.com,player.live-video.net,dl.google.com,www.google-analytics.com"
+        realityDestDomainList="gateway.icloud.com,itunes.apple.com,download-installer.cdn.mozilla.net,addons.mozilla.org,www.lovelive-anime.jp,www.speedtest.net,www.speedtest.org,swdist.apple.com,swcdn.apple.com,updates.cdn-apple.com,mensura.cdn-apple.com,osxapps.itunes.apple.com,aod.itunes.apple.com,s0.awsstatic.com,d1.awsstatic.com,images-na.ssl-images-amazon.com,m.media-amazon.com,player.live-video.net"
 
         echoContent skyBlue "\n===== 生成配置回落的域名 例如:[addons.mozilla.org:443] ======\n"
         echoContent green "回落域名列表：https://www.v2ray-agent.com/archives/1680104902581#heading-8\n"
@@ -7808,7 +7819,7 @@ menu() {
     cd "$HOME" || exit
     echoContent red "\n=============================================================="
     echoContent green "作者：mack-a"
-    echoContent green "当前版本：v2.9.25"
+    echoContent green "当前版本：v2.9.30"
     echoContent green "Github：https://github.com/mack-a/v2ray-agent"
     echoContent green "描述：八合一共存脚本\c"
     showInstallStatus
