@@ -353,7 +353,7 @@ readNginxSubscribe() {
     if [[ -f "${nginxConfigPath}subscribe.conf" ]]; then
         if grep -q "sing-box" "${nginxConfigPath}subscribe.conf"; then
             subscribePort=$(grep "listen" "${nginxConfigPath}subscribe.conf" | awk '{print $2}')
-            if ! grep -q "ssl" "${nginxConfigPath}subscribe.conf"; then
+            if ! grep "listen" "${nginxConfigPath}subscribe.conf" | grep -q "ssl"; then
                 subscribeType="http"
             fi
         fi
@@ -848,8 +848,8 @@ readConfigHostPathUUID() {
             currentPath=${currentPath::-2}
         fi
     fi
-    if [[ -f "/etc/v2ray-agent/cdn" ]] && grep -q "address" "/etc/v2ray-agent/cdn"; then
-        currentCDNAddress=$(grep "address" "/etc/v2ray-agent/cdn" | awk -F "[:]" '{print $2}')
+    if [[ -f "/etc/v2ray-agent/cdn" ]] && [[ -n "$(head -1 /etc/v2ray-agent/cdn)" ]]; then
+        currentCDNAddress=$(head -1 /etc/v2ray-agent/cdn)
     else
         currentCDNAddress="${currentHost}"
     fi
@@ -1399,17 +1399,11 @@ server {
 	server_name ${domain};
 	root ${nginxStaticPath};
 
-    set_real_ip_from 0.0.0.0/0;
+    set_real_ip_from 127.0.0.1;
     real_ip_header proxy_protocol;
 
 	client_header_timeout 1071906480m;
     keepalive_timeout 1071906480m;
-
-	location ~ ^/s/(clashMeta|default|clashMetaProfiles|sing-box|sing-box_profiles)/(.*) {
-	    proxy_set_header X-Real-IP \$proxy_protocol_addr;
-        default_type 'text/plain; charset=utf-8';
-        alias /etc/v2ray-agent/subscribe/\$1/\$2;
-    }
 
     location /${currentPath}grpc {
     	if (\$content_type !~ "application/grpc") {
@@ -1441,16 +1435,12 @@ EOF
 server {
 	${nginxH2Conf}
 
-	set_real_ip_from 0.0.0.0/0;
+	set_real_ip_from 127.0.0.1;
     real_ip_header proxy_protocol;
 
 	server_name ${domain};
 	root ${nginxStaticPath};
-	location ~ ^/s/(clashMeta|default|clashMetaProfiles|sing-box|sing-box_profiles)/(.*) {
-	    proxy_set_header X-Real-IP \$proxy_protocol_addr;
-        default_type 'text/plain; charset=utf-8';
-        alias /etc/v2ray-agent/subscribe/\$1/\$2;
-    }
+
 	location /${currentPath}grpc {
 		client_max_body_size 0;
 		keepalive_requests 4294967296;
@@ -1461,6 +1451,8 @@ server {
  		grpc_send_timeout 1071906480m;
 		grpc_pass grpc://127.0.0.1:31301;
 	}
+	location / {
+    }
 }
 EOF
 
@@ -1469,16 +1461,12 @@ EOF
 server {
 	${nginxH2Conf}
 
-	set_real_ip_from 0.0.0.0/0;
+	set_real_ip_from 127.0.0.1;
     real_ip_header proxy_protocol;
 
     server_name ${domain};
 	root ${nginxStaticPath};
-	location ~ ^/s/(clashMeta|default|clashMetaProfiles|sing-box|sing-box_profiles)/(.*) {
-	    proxy_set_header X-Real-IP \$proxy_protocol_addr;
-        default_type 'text/plain; charset=utf-8';
-        alias /etc/v2ray-agent/subscribe/\$1/\$2;
-    }
+
 	location /${currentPath}trojangrpc {
 		client_max_body_size 0;
 		# keepalive_time 1071906480m;
@@ -1490,6 +1478,8 @@ server {
  		grpc_send_timeout 1071906480m;
 		grpc_pass grpc://127.0.0.1:31301;
 	}
+	location / {
+    }
 }
 EOF
     else
@@ -1498,17 +1488,12 @@ EOF
 server {
 	${nginxH2Conf}
 
-	set_real_ip_from 0.0.0.0/0;
+	set_real_ip_from 127.0.0.1;
     real_ip_header proxy_protocol;
 
 	server_name ${domain};
 	root ${nginxStaticPath};
 
-    location ~ ^/s/(clashMeta|default|clashMetaProfiles|sing-box|sing-box_profiles)/(.*) {
-        proxy_set_header X-Real-IP \$proxy_protocol_addr;
-        default_type 'text/plain; charset=utf-8';
-        alias /etc/v2ray-agent/subscribe/\$1/\$2;
-    }
 	location / {
 	}
 }
@@ -1520,15 +1505,10 @@ server {
 	listen 127.0.0.1:31300 proxy_protocol;
 	server_name ${domain};
 
-	set_real_ip_from 0.0.0.0/0;
+	set_real_ip_from 127.0.0.1;
 	real_ip_header proxy_protocol;
 
 	root ${nginxStaticPath};
-	location ~ ^/s/(clashMeta|default|clashMetaProfiles|sing-box|sing-box_profiles)/(.*) {
-        proxy_set_header X-Real-IP \$proxy_protocol_addr;
-        default_type 'text/plain; charset=utf-8';
-        alias /etc/v2ray-agent/subscribe/\$1/\$2;
-    }
 	location / {
 	}
 }
@@ -5606,9 +5586,6 @@ unInstall() {
 manageCDN() {
     echoContent skyBlue "\n进度 $1/1 : CDN节点管理"
     local setCDNDomain=
-    if [[ ! -f "/etc/v2ray-agent/cdn" ]]; then
-        touch "/etc/v2ray-agent/cdn"
-    fi
 
     if echo "${currentInstallProtocolType}" | grep -qE ",1,|,2,|,3,|,5,"; then
         echoContent red "=============================================================="
@@ -5642,15 +5619,15 @@ manageCDN() {
             read -r -p "请输入想要自定义CDN IP或者域名:" setCDNDomain
             ;;
         6)
-            sed -i "1d" "/etc/v2ray-agent/cdn"
+            echo >/etc/v2ray-agent/cdn
             echoContent green " ---> 移除成功"
             exit 0
             ;;
         esac
 
         if [[ -n "${setCDNDomain}" ]]; then
-            sed -i "1d" "/etc/v2ray-agent/cdn"
-            test -s "/etc/v2ray-agent/cdn" && sed -i "1i address:${setCDNDomain}" "/etc/v2ray-agent/cdn" || echo "address:${setCDNDomain}" >"/etc/v2ray-agent/cdn"
+            echo >/etc/v2ray-agent/cdn
+            echo "${setCDNDomain}" >"/etc/v2ray-agent/cdn"
             echoContent green " ---> 修改CDN成功，重新查看用户管理或者订阅后生成新的节点内容"
         else
             echoContent red " ---> 不可以为空，请重新输入"
@@ -6169,30 +6146,7 @@ ipv6Routing() {
     echoContent red "=============================================================="
     read -r -p "请选择:" ipv6Status
     if [[ "${ipv6Status}" == "1" ]]; then
-        if [[ "${coreInstallType}" == "1" ]]; then
-            if [[ -f "${configPath}09_routing.json" ]]; then
-                echoContent yellow "Xray-core："
-                jq -r -c '.routing.rules[]|select (.outboundTag=="IPv6_out")|.domain' ${configPath}09_routing.json | jq -r
-            elif [[ ! -f "${configPath}09_routing.json" && -f "${configPath}IPv6_out.json" ]]; then
-                echoContent yellow "Xray-core"
-                echoContent green " ---> 已设置IPv6全局分流"
-            else
-                echoContent yellow " ---> 未安装IPv6分流"
-            fi
-
-        fi
-        if [[ -n "${singBoxConfigPath}" ]]; then
-            if [[ -f "${singBoxConfigPath}IPv6_out_route.json" ]]; then
-                echoContent yellow "sing-box"
-                jq -r -c '.route.rules[]|select (.outbound=="IPv6_out")' "${singBoxConfigPath}IPv6_out_route.json" | jq -r
-            elif [[ ! -f "${singBoxConfigPath}IPv6_out_route.json" && -f "${singBoxConfigPath}IPv6_out.json" ]]; then
-                echoContent yellow "sing-box"
-                echoContent green " ---> 已设置IPv6全局分流"
-            else
-                echoContent yellow " ---> 未安装IPv6分流"
-            fi
-        fi
-
+        showIPv6Routing
         exit 0
     elif [[ "${ipv6Status}" == "2" ]]; then
         echoContent red "=============================================================="
@@ -6280,6 +6234,32 @@ ipv6Routing() {
     reloadCore
 }
 
+# ipv6分流规则展示
+showIPv6Routing() {
+    if [[ "${coreInstallType}" == "1" ]]; then
+        if [[ -f "${configPath}09_routing.json" ]]; then
+            echoContent yellow "Xray-core："
+            jq -r -c '.routing.rules[]|select (.outboundTag=="IPv6_out")|.domain' ${configPath}09_routing.json | jq -r
+        elif [[ ! -f "${configPath}09_routing.json" && -f "${configPath}IPv6_out.json" ]]; then
+            echoContent yellow "Xray-core"
+            echoContent green " ---> 已设置IPv6全局分流"
+        else
+            echoContent yellow " ---> 未安装IPv6分流"
+        fi
+
+    fi
+    if [[ -n "${singBoxConfigPath}" ]]; then
+        if [[ -f "${singBoxConfigPath}IPv6_out_route.json" ]]; then
+            echoContent yellow "sing-box"
+            jq -r -c '.route.rules[]|select (.outbound=="IPv6_out")' "${singBoxConfigPath}IPv6_out_route.json" | jq -r
+        elif [[ ! -f "${singBoxConfigPath}IPv6_out_route.json" && -f "${singBoxConfigPath}IPv6_out.json" ]]; then
+            echoContent yellow "sing-box"
+            echoContent green " ---> 已设置IPv6全局分流"
+        else
+            echoContent yellow " ---> 未安装IPv6分流"
+        fi
+    fi
+}
 # bt下载管理
 btTools() {
     if [[ "${coreInstallType}" == "2" ]]; then
@@ -6797,10 +6777,13 @@ warpRoutingReg() {
 routingToolsMenu() {
     echoContent skyBlue "\n功能 1/${totalProgress} : 分流工具"
     echoContent red "\n=============================================================="
+    echoContent yellow "# 注意事项"
+    echoContent yellow "# 用于服务端的流量分流，可用于解锁ChatGPT、流媒体等相关内容\n"
+
     echoContent yellow "1.WARP分流【第三方 IPv4】"
     echoContent yellow "2.WARP分流【第三方 IPv6】"
     echoContent yellow "3.IPv6分流"
-    echoContent yellow "4.Socks5分流"
+    echoContent yellow "4.Socks5分流【替换任意门分流】"
     echoContent yellow "5.DNS分流"
     #    echoContent yellow "6.VMess+WS+TLS分流"
     echoContent yellow "7.SNI反向代理分流"
@@ -7002,7 +6985,7 @@ setSocks5OutboundRoutingAll() {
 
             removeSingBoxConfig wireguard_outbound
 
-            removeSingBoxConfig socks5_inbound_route
+            removeSingBoxConfig socks5_outbound_route
         fi
 
         echoContent green " ---> Socks5全局出站设置完毕"
@@ -7013,6 +6996,10 @@ showSingBoxRoutingRules() {
     if [[ -n "${singBoxConfigPath}" ]]; then
         if [[ -f "${singBoxConfigPath}$1.json" ]]; then
             jq .route.rules "${singBoxConfigPath}$1.json"
+        elif [[ "$1" == "socks5_outbound_route" && -f "${singBoxConfigPath}socks5_outbound.json" ]]; then
+            echoContent yellow "已安装 sing-box socks5全局出站分流"
+        elif [[ "$1" == "socks5_inbound_route" && -f "${singBoxConfigPath}20_socks5_inbounds.json" ]]; then
+            echoContent yellow "已安装 sing-box socks5全局入站分流"
         fi
     fi
 }
@@ -7022,6 +7009,8 @@ showXrayRoutingRules() {
     if [[ "${coreInstallType}" == "1" ]]; then
         if [[ -f "${configPath}09_routing.json" ]]; then
             jq ".routing.rules[]|select(.outboundTag==\"$1\")" "${configPath}09_routing.json"
+        elif [[ "$1" == "socks5_outbound" && -f "${configPath}socks5_outbound.json" ]]; then
+            echoContent yellow "\n已安装 sing-box socks5全局出站分流"
         fi
     fi
 }
@@ -7172,6 +7161,13 @@ setSocks5InboundRouting() {
 
     read -r -p "是否允许所有网站？请选择[y/n]:" socks5InboundRoutingDomainStatus
     if [[ "${socks5InboundRoutingDomainStatus}" == "y" ]]; then
+        addSingBoxRouteRule "01_direct_outbound" "" "socks5_inbound_route"
+        local route=
+        route=$(jq ".route.rules[0].inbound = [\"socks5_inbound\"]" "${singBoxConfigPath}socks5_inbound_route.json")
+        route=$(echo "${route}" | jq ".route.rules[0].source_ip_cidr=${socks5InboundRoutingIPs}")
+        echo "${route}" | jq . >"${singBoxConfigPath}socks5_inbound_route.json"
+
+        addSingBoxOutbound block
         addSingBoxOutbound "01_direct_outbound"
     else
         echoContent yellow "录入示例:netflix,openai,v2ray-agent.com\n"
@@ -7700,15 +7696,16 @@ customXrayInstall() {
         echoContent red " ---> 多选请使用英文逗号分隔"
         exit 0
     fi
-    if [[ "${selectCustomInstallType//,/}" =~ ^[0-5]+$ ]]; then
+
+
+    if [[ "${selectCustomInstallType}" == "7" ]]; then
+        selectCustomInstallType=",${selectCustomInstallType},"
+    else
         if ! echo "${selectCustomInstallType}" | grep -q "0,"; then
             selectCustomInstallType=",0,${selectCustomInstallType},"
         else
             selectCustomInstallType=",${selectCustomInstallType},"
         fi
-    fi
-    if [[ "${selectCustomInstallType}" == "7" ]]; then
-        selectCustomInstallType=",${selectCustomInstallType},"
     fi
 
     #    if [[ "${selectCustomInstallType: -1}" != "," ]]; then
@@ -8084,11 +8081,21 @@ server {
     ${nginxSubscribeListen}
     ${serverName}
     ${nginxSubscribeSSL}
+    ssl_protocols              TLSv1.2 TLSv1.3;
+    ssl_ciphers                TLS13_AES_128_GCM_SHA256:TLS13_AES_256_GCM_SHA384:TLS13_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers  on;
+
+    ssl_stapling               on;
+    ssl_stapling_verify        on;
+    resolver                   1.1.1.1 valid=60s;
+    resolver_timeout           2s;
     client_max_body_size 100m;
     root ${nginxStaticPath};
     location ~ ^/s/(clashMeta|default|clashMetaProfiles|sing-box|sing-box_profiles)/(.*) {
         default_type 'text/plain; charset=utf-8';
         alias /etc/v2ray-agent/subscribe/\$1/\$2;
+    }
+    location / {
     }
 }
 EOF
@@ -8531,9 +8538,7 @@ initRandomSalt() {
 # 订阅
 subscribe() {
     readInstallProtocolType
-    if [[ "${coreInstallType}" == "1" ]] && [[ "${selectCustomInstallType}" == ",7," || "${currentInstallProtocolType}" == ",7,8," ]] || [[ "${coreInstallType}" == "2" ]]; then
-        installSubscribe
-    fi
+    installSubscribe
 
     readNginxSubscribe
     if [[ "${coreInstallType}" == "1" || "${coreInstallType}" == "2" ]]; then
@@ -8822,9 +8827,9 @@ initRealityClientServersName() {
         if [[ "${realityServerNameCurrentDomainStatus}" == "y" ]]; then
             realityServerName="${domain}"
             if [[ "${selectCoreType}" == "1" ]]; then
-                if [[ -n "${port}" ]]; then
-                    realityDomainPort="${port}"
-                elif [[ -z "${subscribePort}" ]]; then
+                #                if [[ -n "${port}" ]]; then
+                #                    realityDomainPort="${port}"
+                if [[ -z "${subscribePort}" ]]; then
                     echo
                     installSubscribe
                     readNginxSubscribe
@@ -9166,7 +9171,7 @@ menu() {
     cd "$HOME" || exit
     echoContent red "\n=============================================================="
     echoContent green "作者：mack-a"
-    echoContent green "当前版本：v3.2.49"
+    echoContent green "当前版本：v3.2.55"
     echoContent green "Github：https://github.com/mack-a/v2ray-agent"
     echoContent green "描述：八合一共存脚本\c"
     showInstallStatus
